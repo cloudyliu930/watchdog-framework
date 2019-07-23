@@ -3,20 +3,15 @@ package cn.licoy.wdog.core.config.shiro;
 import cn.licoy.wdog.core.config.jwt.JwtFilter;
 import cn.licoy.wdog.core.service.global.ShiroService;
 import lombok.extern.log4j.Log4j;
-import org.apache.shiro.mgt.DefaultSessionStorageEvaluator;
-import org.apache.shiro.mgt.DefaultSubjectDAO;
+import net.sf.ehcache.CacheManager;
+import org.apache.shiro.cache.ehcache.EhCacheManager;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.spring.security.interceptor.AuthorizationAttributeSourceAdvisor;
 import org.apache.shiro.spring.web.ShiroFilterFactoryBean;
 import org.apache.shiro.web.mgt.DefaultWebSecurityManager;
-import org.apache.shiro.web.session.mgt.DefaultWebSessionManager;
-import org.crazycake.shiro.RedisCacheManager;
-import org.crazycake.shiro.RedisManager;
-import org.crazycake.shiro.RedisSessionDAO;
 import org.springframework.aop.framework.autoproxy.DefaultAdvisorAutoProxyCreator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.MethodInvokingFactoryBean;
-import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -59,25 +54,32 @@ public class ShiroConfiguration {
     @Bean
     public MyRealm myRealm(){
         MyRealm myRealm = new MyRealm();
+        myRealm.setCacheManager(ehCacheManager());
         myRealm.setCredentialsMatcher(new CredentialsMatcher());
         myRealm.setAuthorizationCacheName(MyRealm.class.getName()+".authorizationCache");
         return myRealm;
     }
 
     @Bean
-    public SecurityManager securityManager(RedisCacheManager RedisCacheManager){
-        DefaultWebSecurityManager manager =  new DefaultWebSecurityManager();
-        manager.setRealm(myRealm());
-        manager.setCacheManager(RedisCacheManager);
-        /*
-        * 关闭session存储，禁用Session作为存储策略的实现，
-        * 但它没有完全地禁用Session所以需要配合SubjectFactory中的context.setSessionCreationEnabled(false)
-        */
-        //manager.setSessionManager(sessionManager());
-        ((DefaultSessionStorageEvaluator) ((DefaultSubjectDAO)manager.getSubjectDAO())
-                .getSessionStorageEvaluator()).setSessionStorageEnabled(false);
-        manager.setSubjectFactory(new AgileSubjectFactory());
-        return manager;
+    public SecurityManager securityManager(){
+        DefaultWebSecurityManager securityManager = new DefaultWebSecurityManager();
+        securityManager.setRealm(myRealm());
+        securityManager.setCacheManager(ehCacheManager());
+        return  securityManager;
+    }
+
+    @Bean
+    public org.apache.shiro.cache.CacheManager ehCacheManager() {
+        CacheManager cacheManager = CacheManager.getCacheManager("defaultCache");
+        if(cacheManager == null){
+            cacheManager = CacheManager.create();
+        }
+
+        System.out.println("ShiroConfiguration.getEhCacheManager()");
+        EhCacheManager ehCacheManager = new EhCacheManager();
+        ehCacheManager.setCacheManager(cacheManager);
+        ehCacheManager.setCacheManagerConfigFile("classpath:ehcache.xml");
+        return ehCacheManager;
     }
 
     //开启shiro aop注解支持
@@ -106,32 +108,4 @@ public class ShiroConfiguration {
         return bean;
     }
 
-    @ConfigurationProperties(prefix = "spring.redis")
-    @Bean("shiroRedisManager")
-    public RedisManager redisManager(){
-        return new RedisManager();
-    }
-
-    @Bean("shiroRedisCacheManager")
-    public RedisCacheManager cacheManager(RedisManager manager) {
-        RedisCacheManager redisCacheManager = new RedisCacheManager();
-        redisCacheManager.setRedisManager(manager);
-        return redisCacheManager;
-    }
-    /*
-    禁用SESSION，所以此配置无效
-    @Bean
-    public RedisSessionDAO redisSessionDAO(){
-        RedisSessionDAO dao = new RedisSessionDAO();
-        dao.setRedisManager(redisManager());
-        return dao;
-    }
-
-    @Bean
-    public DefaultWebSessionManager sessionManager() {
-        DefaultWebSessionManager sessionManager = new DefaultWebSessionManager();
-        sessionManager.setSessionValidationSchedulerEnabled(false);
-        //sessionManager.setSessionDAO(redisSessionDAO());
-        return sessionManager;
-    }*/
 }
